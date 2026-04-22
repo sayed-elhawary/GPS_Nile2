@@ -1,0 +1,74 @@
+{
+  "name": "nilemix-desktop",
+  "version": "1.0.0",
+  "description": "NileMix Desktop Application",
+  "main": "main.js",
+  "private": true,
+  "homepage": "./",
+  "dependencies": {
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "@mui/icons-material": "^5.15.0",
+    "@mui/material": "^5.15.0",
+    "@mui/x-date-pickers": "^6.19.0",
+    "axios": "^1.6.0",
+    "date-fns": "^2.30.0",
+    "file-saver": "^2.0.5",
+    "framer-motion": "^10.16.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-quill": "^2.0.0",
+    "react-router-dom": "^6.20.0",
+    "react-scripts": "5.0.1",
+    "web-vitals": "^2.1.4",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.3.0",
+    "@electron-forge/maker-deb": "^7.3.0",
+    "@electron-forge/maker-rpm": "^7.3.0",
+    "@electron-forge/maker-squirrel": "^7.3.0",
+    "@electron-forge/maker-zip": "^7.3.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.3.0",
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^27.0.0",
+    "wait-on": "^7.2.0"
+  },
+  "scripts": {
+    "start": "npm run start:react",
+    "start:react": "react-scripts start",
+    "start:electron": "npm run build && electron .",
+    "start:dev": "concurrently \"npm run start:react\" \"npm run electron:wait\"",
+    "electron:wait": "wait-on --timeout 60000 --interval 2000 http://localhost:3000 && electron .",
+    "build": "react-scripts build",
+    "package": "npm run build && electron-forge package",
+    "make": "npm run build && electron-forge make",
+    "make:exe": "npm run build && electron-forge make --platform=win32",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "config": {
+    "forge": "./forge.config.js"
+  }
+}
