@@ -1,0 +1,119 @@
+// electron/main.js
+const { app, BrowserWindow } = require('electron');
+const path = require('path');
+const { spawn } = require('child_process');
+const fs = require('fs');
+
+let mainWindow;
+let backendProcess = null;
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+// ====================== قراءة REACT_APP_API_URL من frontend/.env ======================
+const envPath = path.join(__dirname, '../frontend/.env');
+let API_URL = 'http://localhost:5000';
+let RUN_BACKEND = true;
+
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  const envLines = envContent.split('\n');
+  envLines.forEach(line => {
+    if (line.trim() === '' || line.startsWith('#')) return;
+    const [key, ...valueParts] = line.split('=');
+    const value = valueParts.join('=').trim();
+    const trimmedKey = key.trim();
+
+    if (trimmedKey === 'REACT_APP_API_URL' && value) {
+      API_URL = value;
+    }
+    if (trimmedKey === 'ELECTRON_RUN_BACKEND' && value) {
+      RUN_BACKEND = value.toLowerCase() === 'true';
+    }
+  });
+  console.log('✅ .env loaded successfully');
+  console.log(`🌐 API_URL from .env = ${API_URL}`);
+  console.log(`🔧 RUN_BACKEND = ${RUN_BACKEND}`);
+} else {
+  console.warn('⚠️ .env file not found, using defaults');
+}
+
+// ====================== إنشاء النافذة ======================
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1200,
+    minHeight: 700,
+    title: "NileMix - Equipment SIM Management",
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  mainWindow.webContents.openDevTools();
+
+  if (isDev) {
+    // تمرير الـ API_URL كـ query parameter للـ React dev server
+    const targetURL = `http://localhost:3000?API_URL=${encodeURIComponent(API_URL)}`;
+    console.log(`🚀 Loading React at: ${targetURL}`);
+    mainWindow.loadURL(targetURL);
+  } else {
+    const indexPath = path.join(__dirname, '../frontend/build/index.html');
+    console.log('🚀 Loading Production Build');
+    mainWindow.loadFile(indexPath)
+      .then(() => console.log('✅ index.html loaded successfully'))
+      .catch(err => console.error('❌ Load failed:', err));
+  }
+}
+
+// ====================== تشغيل الـ Backend ======================
+function startBackend() {
+  if (!RUN_BACKEND) {
+    console.log('🚀 Client Mode - Backend will not start');
+    return;
+  }
+
+  console.log('🖥️ Starting Backend...');
+  const backendPath = isDev
+    ? path.join(__dirname, '../backend/index.js')
+    : path.join(process.resourcesPath, 'backend/index.js');
+
+  backendProcess = spawn('node', [backendPath], {
+    cwd: isDev ? path.join(__dirname, '../backend') : path.join(process.resourcesPath, 'backend'),
+    env: {
+      ...process.env,
+      PORT: '5000',
+      NODE_ENV: isDev ? 'development' : 'production'
+    },
+    stdio: 'pipe'
+  });
+
+  backendProcess.stdout.on('data', (d) => console.log('[Backend]', d.toString().trim()));
+  backendProcess.stderr.on('data', (d) => console.error('[Backend Error]', d.toString().trim()));
+}
+
+function stopBackend() {
+  if (backendProcess) {
+    backendProcess.kill();
+    backendProcess = null;
+  }
+}
+
+// ====================== تشغيل التطبيق ======================
+app.whenReady().then(() => {
+  startBackend();
+  const delay = RUN_BACKEND ? 2000 : 1000;   // زيادة الـ delay عشان الباك اند يجهز
+  setTimeout(createWindow, delay);
+});
+
+app.on('window-all-closed', () => {
+  stopBackend();
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', stopBackend);
+
+console.log('=======================================');
+console.log('🚀 Electron Main Process Started');
+console.log(`🌐 API_URL to be passed: ${API_URL}`);
+console.log('=======================================');
