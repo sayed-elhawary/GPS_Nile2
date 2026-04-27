@@ -1,8 +1,9 @@
-// src/ClientData.js
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 export default function ClientData() {
   const [file, setFile] = useState(null);
@@ -16,7 +17,6 @@ export default function ClientData() {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [theme, setTheme] = useState('dark');
-
   const navigate = useNavigate();
 
   // تحميل الثيم المحفوظ
@@ -34,9 +34,10 @@ export default function ClientData() {
   const fetchAllEmployees = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:5000/api/client-data/employees');
-      setAllEmployees(res.data);
-      setFilteredEmployees(res.data);
+      const res = await axios.get(`${API_URL}/api/client-data/employees`);
+      const data = Array.isArray(res.data) ? res.data : [];
+      setAllEmployees(data);
+      setFilteredEmployees(data);
     } catch (err) {
       console.error(err);
       setError('فشل في جلب بيانات الموظفين');
@@ -59,14 +60,12 @@ export default function ClientData() {
     setPreviewData([]);
 
     const reader = new FileReader();
-
     reader.onload = (event) => {
       try {
         const workbook = XLSX.read(event.target.result, {
           type: 'binary',
           codepage: 65001
         });
-
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, {
           header: 1,
@@ -78,28 +77,29 @@ export default function ClientData() {
         console.log("📊 البيانات الخام من Excel:", jsonData);
 
         const processed = [];
-        
         let headers = [];
+
         if (jsonData.length > 0) {
           headers = jsonData[0].map(cell => String(cell || '').trim());
         }
-        
+
         console.log("📌 عناوين الأعمدة:", headers);
 
         for (let i = 1; i < jsonData.length; i++) {
           const row = jsonData[i];
           if (!row || row.length === 0) continue;
-          
+
           const cleaned = row.map(cell => {
             if (cell === null || cell === undefined) return '';
             return String(cell).trim();
           });
-          
+
           if (cleaned.every(cell => cell === '')) continue;
-          
+
           let employeeCode = cleaned[1] || '';
           let employeeName = cleaned[2] || '';
-          
+
+          // محاولة استخراج الكود والاسم إذا لم يكن في الأعمدة المتوقعة
           if (!employeeCode && !employeeName) {
             for (let cell of cleaned) {
               if (/^\d+$/.test(cell) && cell.length >= 1 && cell.length <= 15) {
@@ -109,13 +109,13 @@ export default function ClientData() {
               }
             }
           }
-          
+
           if (employeeCode && employeeName) {
             let finalCode = employeeCode;
             if (/^\d+$/.test(employeeCode)) {
               finalCode = String(parseInt(employeeCode, 10));
             }
-            
+
             processed.push({
               employeeCode: finalCode,
               employeeName: employeeName
@@ -126,25 +126,14 @@ export default function ClientData() {
         console.log("✅ البيانات المعالجة:", processed);
 
         if (processed.length === 0) {
-          setError(`لم يتم العثور على بيانات صالحة.
-          
-الملف الذي رفعته يحتوي على ${jsonData.length} صف.
-
-تأكد من أن الملف يحتوي على الأعمدة التالية:
-• العمود الأول: المسلسل (سيتم تجاهله)
-• العمود الثاني: كود الموظف (مثال: 1, 2, 3, 8, 9, 10, 17)
-• العمود الثالث: اسم الموظف الكامل
-• العمود الرابع: الرقم التأميني (اختياري)
-
-المثال الصحيح:
-1 | 1 | هانى محمد حسن محمد على العدل | 42150432`);
+          setError(`لم يتم العثور على بيانات صالحة.\n\nالملف الذي رفعته يحتوي على ${jsonData.length} صف.\nتأكد من أن الملف يحتوي على الهيكل التالي:\n• العمود الأول: المسلسل (سيتم تجاهله)\n• العمود الثاني: كود الموظف\n• العمود الثالث: اسم الموظف الكامل\n• العمود الرابع: الرقم التأميني (اختياري)`);
         } else {
           setPreviewData(processed);
           setSuccess(`✅ تم قراءة ${processed.length} موظف بنجاح`);
         }
       } catch (err) {
         console.error(err);
-        setError('فشل في قراءة الملف. تأكد أنه .xlsx حقيقي');
+        setError('فشل في قراءة الملف. تأكد أنه ملف Excel حقيقي (.xlsx أو .xls)');
       }
     };
 
@@ -156,14 +145,16 @@ export default function ClientData() {
       setError('لا توجد بيانات للحفظ');
       return;
     }
+
     setUploading(true);
     setError('');
     setSuccess('');
 
     try {
-      const res = await axios.post('http://localhost:5000/api/client-data/bulk', {
+      const res = await axios.post(`${API_URL}/api/client-data/bulk`, {
         employees: previewData
       });
+
       setSuccess(res.data.message || `✅ تم حفظ ${previewData.length} موظف بنجاح`);
       setPreviewData([]);
       setFile(null);
@@ -176,12 +167,14 @@ export default function ClientData() {
   };
 
   const handleDeleteAll = async () => {
-    if (!window.confirm('⚠️ هل أنت متأكد من حذف جميع البيانات؟')) return;
+    if (!window.confirm('⚠️ هل أنت متأكد من حذف جميع بيانات الموظفين؟\nهذا الإجراء لا يمكن التراجع عنه!')) return;
+
     setDeleting(true);
     setError('');
     setSuccess('');
+
     try {
-      await axios.delete('http://localhost:5000/api/client-data/employees');
+      await axios.delete(`${API_URL}/api/client-data/employees`);
       setSuccess('✅ تم حذف جميع البيانات بنجاح');
       setAllEmployees([]);
       setFilteredEmployees([]);
@@ -192,6 +185,7 @@ export default function ClientData() {
     }
   };
 
+  // فلترة البحث
   useEffect(() => {
     if (!searchTerm.trim()) {
       setFilteredEmployees(allEmployees);
@@ -205,7 +199,7 @@ export default function ClientData() {
     setFilteredEmployees(filtered);
   }, [searchTerm, allEmployees]);
 
-  // ألوان الثيم (مطابقة لتصميم الوزارات السابق)
+  // ألوان الثيم
   const themeStyles = theme === 'light' ? {
     bg: '#f0f4ff',
     cardBg: '#ffffff',
@@ -225,10 +219,8 @@ export default function ClientData() {
     tableBorder: '#e2e8f0',
     errorBg: '#fef2f2',
     errorText: '#dc2626',
-    errorBorder: '#fecaca',
     successBg: '#ecfdf5',
     successText: '#10b981',
-    successBorder: '#d1fae5',
     uploadBtnBg: 'linear-gradient(135deg, #4f6ef7, #7c3aed)',
     uploadBtnHover: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
     deleteBtnBg: '#ef4444',
@@ -241,7 +233,6 @@ export default function ClientData() {
     fileBorder: '#4f6ef7',
     fileHoverBg: '#f8fafc',
     shadow: 'rgba(0, 0, 0, 0.08)',
-    cardShadow: 'rgba(0, 0, 0, 0.05)'
   } : {
     bg: '#060818',
     cardBg: '#1e293b',
@@ -261,10 +252,8 @@ export default function ClientData() {
     tableBorder: '#334155',
     errorBg: 'rgba(239, 68, 68, 0.15)',
     errorText: '#f87171',
-    errorBorder: 'rgba(239, 68, 68, 0.3)',
     successBg: 'rgba(16, 185, 129, 0.15)',
     successText: '#34d399',
-    successBorder: 'rgba(16, 185, 129, 0.3)',
     uploadBtnBg: 'linear-gradient(135deg, #4f6ef7, #7c3aed)',
     uploadBtnHover: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
     deleteBtnBg: '#dc2626',
@@ -277,26 +266,21 @@ export default function ClientData() {
     fileBorder: '#6366f1',
     fileHoverBg: 'rgba(99, 102, 241, 0.1)',
     shadow: 'rgba(0, 0, 0, 0.3)',
-    cardShadow: 'rgba(0, 0, 0, 0.2)'
   };
 
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
-        
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        }
-        
+       
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+       
         body {
           background: ${themeStyles.bg};
           font-family: 'Cairo', sans-serif;
           transition: background 0.3s ease;
         }
-        
+       
         .client-root {
           min-height: 100vh;
           background: ${themeStyles.bg};
@@ -305,8 +289,7 @@ export default function ClientData() {
           padding: 35px 45px;
           transition: background 0.3s ease;
         }
-        
-        /* ============ MAIN CARD ============ */
+       
         .content-card {
           background: ${themeStyles.cardBg};
           border: 1px solid ${themeStyles.cardBorder};
@@ -316,8 +299,7 @@ export default function ClientData() {
           min-height: 85vh;
           transition: all 0.3s ease;
         }
-        
-        /* ============ HEADER ============ */
+       
         .header {
           display: flex;
           justify-content: space-between;
@@ -326,13 +308,13 @@ export default function ClientData() {
           padding-bottom: 20px;
           border-bottom: 2px solid ${themeStyles.cardBorder};
         }
-        
+       
         .header-left {
           display: flex;
           align-items: center;
           gap: 20px;
         }
-        
+       
         .back-btn {
           background: ${themeStyles.backBtnBg};
           color: white;
@@ -347,26 +329,24 @@ export default function ClientData() {
           justify-content: center;
           transition: all 0.25s ease;
         }
-        
+       
         .back-btn:hover {
           background: ${themeStyles.backBtnHover};
           transform: scale(1.05);
         }
-        
+       
         .title {
           font-size: 1.8rem;
           font-weight: 900;
           color: ${themeStyles.titleColor};
-          transition: color 0.3s ease;
         }
-        
+       
         .subtitle {
           color: ${themeStyles.subtitleColor};
           font-size: 0.9rem;
           margin-top: 4px;
-          transition: color 0.3s ease;
         }
-        
+       
         .theme-toggle {
           background: ${themeStyles.helpBg};
           border: 1px solid ${themeStyles.cardBorder};
@@ -382,13 +362,12 @@ export default function ClientData() {
           color: ${themeStyles.text2};
           transition: all 0.25s ease;
         }
-        
+       
         .theme-toggle:hover {
           transform: scale(1.02);
           border-color: ${theme === 'light' ? '#4f6ef7' : '#6366f1'};
         }
-        
-        /* ============ MESSAGES ============ */
+       
         .error-message {
           background: ${themeStyles.errorBg};
           color: ${themeStyles.errorText};
@@ -400,7 +379,7 @@ export default function ClientData() {
           font-size: 0.85rem;
           font-weight: 600;
         }
-        
+       
         .success-message {
           background: ${themeStyles.successBg};
           color: ${themeStyles.successText};
@@ -411,8 +390,7 @@ export default function ClientData() {
           font-size: 0.85rem;
           font-weight: 600;
         }
-        
-        /* ============ CARDS ============ */
+       
         .data-card {
           background: ${themeStyles.cardBg};
           border: 1px solid ${themeStyles.cardBorder};
@@ -421,12 +399,12 @@ export default function ClientData() {
           margin-bottom: 28px;
           transition: all 0.3s ease;
         }
-        
+       
         .data-card:hover {
           border-color: ${themeStyles.cardHoverBorder};
-          box-shadow: 0 10px 25px -8px ${themeStyles.cardShadow};
+          box-shadow: 0 10px 25px -8px ${themeStyles.shadow};
         }
-        
+       
         .card-header {
           display: flex;
           justify-content: space-between;
@@ -435,7 +413,7 @@ export default function ClientData() {
           gap: 15px;
           margin-bottom: 20px;
         }
-        
+       
         .card-title {
           font-size: 1.2rem;
           font-weight: 800;
@@ -444,8 +422,7 @@ export default function ClientData() {
           align-items: center;
           gap: 10px;
         }
-        
-        /* ============ FORM ELEMENTS ============ */
+       
         .file-input {
           width: 100%;
           padding: 14px;
@@ -457,12 +434,12 @@ export default function ClientData() {
           transition: all 0.25s ease;
           font-family: 'Cairo', sans-serif;
         }
-        
+       
         .file-input:hover {
           background: ${themeStyles.fileHoverBg};
           border-color: ${theme === 'light' ? '#2563eb' : '#818cf8'};
         }
-        
+       
         .help-text {
           margin-top: 16px;
           color: ${themeStyles.helpText};
@@ -473,12 +450,11 @@ export default function ClientData() {
           border-radius: 14px;
           border: 1px solid ${themeStyles.helpBorder};
         }
-        
+       
         .help-text strong {
           color: ${themeStyles.text2};
         }
-        
-        /* ============ BUTTONS ============ */
+       
         .upload-btn {
           background: ${themeStyles.uploadBtnBg};
           color: white;
@@ -491,19 +467,18 @@ export default function ClientData() {
           transition: all 0.25s ease;
           font-family: 'Cairo', sans-serif;
         }
-        
+       
         .upload-btn:hover:not(:disabled) {
           background: ${themeStyles.uploadBtnHover};
           transform: translateY(-2px);
           box-shadow: 0 8px 20px rgba(79, 110, 247, 0.3);
         }
-        
+       
         .upload-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
-          transform: none;
         }
-        
+       
         .delete-btn {
           background: ${themeStyles.deleteBtnBg};
           color: white;
@@ -517,24 +492,23 @@ export default function ClientData() {
           font-family: 'Cairo', sans-serif;
           white-space: nowrap;
         }
-        
+       
         .delete-btn:hover:not(:disabled) {
           background: ${themeStyles.deleteBtnHover};
           transform: translateY(-2px);
         }
-        
+       
         .delete-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
         }
-        
-        /* ============ SEARCH ============ */
+       
         .search-wrapper {
           position: relative;
           flex: 1;
           max-width: 400px;
         }
-        
+       
         .search-input {
           width: 100%;
           padding: 12px 16px 12px 45px;
@@ -548,16 +522,16 @@ export default function ClientData() {
           color: ${themeStyles.text};
           text-align: right;
         }
-        
+       
         .search-input:focus {
           border-color: ${themeStyles.inputFocusBorder};
           box-shadow: 0 0 0 4px ${theme === 'light' ? 'rgba(79, 110, 247, 0.1)' : 'rgba(99, 102, 241, 0.15)'};
         }
-        
+       
         .search-input::placeholder {
           color: ${themeStyles.text3};
         }
-        
+       
         .search-icon {
           position: absolute;
           left: 16px;
@@ -566,20 +540,19 @@ export default function ClientData() {
           color: ${themeStyles.text3};
           font-size: 16px;
         }
-        
-        /* ============ TABLE ============ */
+       
         .table-container {
           max-height: 500px;
           overflow-y: auto;
           border-radius: 16px;
           border: 1px solid ${themeStyles.tableBorder};
         }
-        
+       
         table {
           width: 100%;
           border-collapse: collapse;
         }
-        
+       
         th {
           background: ${themeStyles.tableHeaderBg};
           color: ${themeStyles.tableHeaderText};
@@ -590,7 +563,7 @@ export default function ClientData() {
           position: sticky;
           top: 0;
         }
-        
+       
         td {
           padding: 12px;
           text-align: center;
@@ -598,25 +571,24 @@ export default function ClientData() {
           font-size: 0.85rem;
           color: ${themeStyles.text2};
         }
-        
+       
         tr:hover td {
           background: ${themeStyles.tableRowHover};
         }
-        
+       
         .code-cell {
           font-weight: 800;
           color: ${theme === 'light' ? '#1e40af' : '#a5b4fc'};
           font-family: monospace;
           font-size: 0.9rem;
         }
-        
+       
         .empty-state {
           padding: 60px;
           text-align: center;
           color: ${themeStyles.text3};
         }
-        
-        /* ============ FLEX UTILITIES ============ */
+       
         .flex-between {
           display: flex;
           justify-content: space-between;
@@ -625,66 +597,46 @@ export default function ClientData() {
           gap: 12px;
           margin-bottom: 20px;
         }
-        
+       
         .flex-start {
           display: flex;
           align-items: center;
           gap: 12px;
           flex-wrap: wrap;
         }
-        
-        /* ============ SCROLLBAR ============ */
+       
         ::-webkit-scrollbar {
           width: 5px;
         }
-        
+       
         ::-webkit-scrollbar-track {
           background: ${theme === 'light' ? '#f1f5f9' : '#1e293b'};
         }
-        
+       
         ::-webkit-scrollbar-thumb {
           background: #6366f1;
           border-radius: 10px;
         }
-        
+       
         ::-webkit-scrollbar-thumb:hover {
           background: #4f46e5;
         }
-        
-        /* ============ ANIMATIONS ============ */
+       
         @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-        
+       
         .data-card {
           animation: fadeInUp 0.4s ease both;
         }
-        
-        /* ============ RESPONSIVE ============ */
+       
         @media (max-width: 768px) {
-          .client-root {
-            padding: 20px;
-          }
-          .content-card {
-            padding: 20px;
-          }
-          .title {
-            font-size: 1.3rem;
-          }
-          .search-wrapper {
-            max-width: 100%;
-          }
-          .card-header {
-            flex-direction: column;
-            align-items: flex-start;
-          }
+          .client-root { padding: 20px; }
+          .content-card { padding: 20px; }
+          .title { font-size: 1.3rem; }
+          .search-wrapper { max-width: 100%; }
+          .card-header { flex-direction: column; align-items: flex-start; }
         }
       `}</style>
 
@@ -737,7 +689,11 @@ export default function ClientData() {
                 <div className="card-title">
                   <span>🔍</span> معاينة البيانات ({previewData.length})
                 </div>
-                <button onClick={handleSubmit} disabled={uploading} className="upload-btn">
+                <button 
+                  onClick={handleSubmit} 
+                  disabled={uploading} 
+                  className="upload-btn"
+                >
                   {uploading ? '⏳ جاري الحفظ...' : '💾 حفظ البيانات في قاعدة البيانات'}
                 </button>
               </div>
