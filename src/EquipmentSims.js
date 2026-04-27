@@ -205,36 +205,41 @@ export default function EquipmentSims() {
     notes: '',
   });
 
-  const fetchAllEquipment = async () => {
-    setLoading(true);
-    try {
-      const res = await axios.get(`${API_URL}/api/equipment-sims`);
-      const data = Array.isArray(res.data) ? res.data : [];
-      setEquipment(data);
-      setFilteredEquipment(data);
+const fetchAllEquipment = async () => {
+  setLoading(true);
+  try {
+    const res = await axios.get(`${API_URL}/api/equipment-sims`);
+    const data = Array.isArray(res.data) ? res.data : [];
+    
+    // عكس الترتيب ليظهر كما في الإكسيل (الأول في الإكسيل = الأول في الجدول)
+    const reversedData = [...data].reverse();
+    
+    setEquipment(reversedData);
+    setFilteredEquipment(reversedData);
 
-      const simNumSet = new Set();
-      const simSerSet = new Set();
-      const duplicateSimNum = new Set();
-      const duplicateSimSer = new Set();
+    // باقي كود الـ duplicates...
+    const simNumSet = new Set();
+    const simSerSet = new Set();
+    const duplicateSimNum = new Set();
+    const duplicateSimSer = new Set();
 
-      data.forEach(item => {
-        if (item.simNumber) {
-          if (simNumSet.has(item.simNumber)) duplicateSimNum.add(item.simNumber);
-          else simNumSet.add(item.simNumber);
-        }
-        if (item.simSerial) {
-          if (simSerSet.has(item.simSerial)) duplicateSimSer.add(item.simSerial);
-          else simSerSet.add(item.simSerial);
-        }
-      });
-      setDuplicates({ simNumber: duplicateSimNum, simSerial: duplicateSimSer });
-    } catch (err) {
-      setError('فشل في جلب البيانات');
-    } finally {
-      setLoading(false);
-    }
-  };
+    reversedData.forEach(item => {
+      if (item.simNumber) {
+        if (simNumSet.has(item.simNumber)) duplicateSimNum.add(item.simNumber);
+        else simNumSet.add(item.simNumber);
+      }
+      if (item.simSerial) {
+        if (simSerSet.has(item.simSerial)) duplicateSimSer.add(item.simSerial);
+        else simSerSet.add(item.simSerial);
+      }
+    });
+    setDuplicates({ simNumber: duplicateSimNum, simSerial: duplicateSimSer });
+  } catch (err) {
+    setError('فشل في جلب البيانات');
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     fetchAllEquipment();
@@ -330,26 +335,28 @@ export default function EquipmentSims() {
         const workbook = XLSX.read(data, { type: 'array', cellDates: true });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false, header: 1 });
-        
+
         let headerRowIndex = -1;
         let headers = [];
-        
-        for (let i = 0; i < Math.min(jsonData.length, 10); i++) {
+
+        // البحث عن صف العناوين (Header Row)
+        for (let i = 0; i < Math.min(jsonData.length, 15); i++) {
           const row = jsonData[i];
           if (!row || row.length === 0) continue;
           const rowStr = row.join(' ').toLowerCase();
           if (rowStr.includes('اسم المعدة') || rowStr.includes('اسم المعده') || 
-              rowStr.includes('سيريل') || rowStr.includes('رقم الشريحة')) {
+              rowStr.includes('سيريل') || rowStr.includes('رقم الشريحة') ||
+              rowStr.includes('سيريال الجهاز')) {
             headerRowIndex = i;
             headers = row.map(cell => String(cell || '').trim());
             break;
           }
         }
-        
+
         if (headerRowIndex === -1) {
-          throw new Error('لم يتم العثور على صف العناوين في الملف');
+          throw new Error('لم يتم العثور على صف العناوين في الملف. تأكد من وجود "اسم المعدة" أو "رقم الشريحة" في الصف الأول أو الثاني.');
         }
-        
+
         const columnMapping = {};
         headers.forEach((header, idx) => {
           const headerLower = header.toLowerCase();
@@ -375,17 +382,20 @@ export default function EquipmentSims() {
             columnMapping.notes = idx;
           }
         });
-        
+
         console.log('📋 Column mapping:', columnMapping);
-        
+
         let successCount = 0;
         let failedCount = 0;
         const failedItems = [];
-        
-        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
-          const row = jsonData[i];
+
+        // هنا الحل الرئيسي: نعكس الصفوف لضمان الترتيب من الأعلى للأسفل
+        const dataRows = jsonData.slice(headerRowIndex + 1);
+
+        for (let i = 0; i < dataRows.length; i++) {
+          const row = dataRows[i];
           if (!row || row.length === 0 || row.every(cell => !cell || String(cell).trim() === '')) continue;
-          
+
           try {
             const newItem = {
               equipmentName: columnMapping.equipmentName !== undefined ? 
@@ -407,48 +417,46 @@ export default function EquipmentSims() {
               notes: columnMapping.notes !== undefined ? 
                 String(row[columnMapping.notes] || '').trim() : '',
             };
-            
+
             if (columnMapping.subscriptionRenewalDate !== undefined) {
               const rawDate = row[columnMapping.subscriptionRenewalDate];
               const parsedDate = parseExcelDate(rawDate);
-              console.log(`📅 Row ${i+1}: Raw="${rawDate}", Parsed="${parsedDate}"`);
               newItem.subscriptionRenewalDate = parsedDate;
             }
-            
+
             if (columnMapping.packageRenewalDate !== undefined) {
               newItem.packageRenewalDate = parseExcelDate(row[columnMapping.packageRenewalDate]);
             }
-            
+
             if (!newItem.equipmentName || newItem.equipmentName === '') {
               failedCount++;
               failedItems.push({ row: i + 1, error: 'اسم المعدة مطلوب', data: row });
               continue;
             }
-            
+
             await axios.post(`${API_URL}/api/equipment-sims`, newItem);
             successCount++;
-            
+
           } catch (err) {
             console.error(`Error saving row ${i + 1}:`, err?.response?.data || err.message);
             failedCount++;
             failedItems.push({ row: i + 1, error: err?.response?.data?.message || err.message });
           }
         }
-        
+
         let message = `✅ تم استيراد ${successCount} سجل بنجاح`;
         if (failedCount > 0) {
           message += `، ❌ فشل ${failedCount} سجل`;
-          console.error('Failed items:', failedItems);
         }
-        
+
         if (successCount > 0) {
           setSuccess(message);
         } else {
           setError(`❌ لم يتم استيراد أي سجل. ${failedItems.length > 0 ? 'تفاصيل: ' + failedItems[0]?.error : 'تأكد من تنسيق الملف'}`);
         }
-        
+
         await fetchAllEquipment();
-        
+
       } catch (err) {
         console.error('Import error:', err);
         setError(`❌ حدث خطأ: ${err.message}`);
@@ -457,7 +465,7 @@ export default function EquipmentSims() {
         e.target.value = '';
       }
     };
-    
+
     reader.readAsArrayBuffer(file);
   };
 
