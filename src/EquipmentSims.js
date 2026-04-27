@@ -36,7 +36,6 @@ async function exportEquipmentToPDF(filteredEquipment) {
   try {
     const currentDate = new Date().toLocaleDateString('ar-EG');
 
-    // إنشاء wrapper خارجي مخفي
     const printDiv = document.createElement('div');
     printDiv.style.cssText = `
       position: absolute;
@@ -66,7 +65,6 @@ async function exportEquipmentToPDF(filteredEquipment) {
       </tr>
     `).join('');
 
-    // بناء HTML بترتيب صحيح: هيدر ثم جدول ثم فوتر — كل عنصر block منفصل
     printDiv.innerHTML = `
       <div style="text-align: center; margin-bottom: 25px; padding-bottom: 20px; border-bottom: 3px solid #4f6ef7; display: block; width: 100%;">
         <h1 style="color: #1e3a8a; margin: 0 0 8px 0; font-size: 26px; font-weight: bold;">&#128225; تقرير شرايح المعدات</h1>
@@ -258,6 +256,65 @@ export default function EquipmentSims() {
     ));
   }, [searchTerm, equipment]);
 
+  const parseExcelDate = (value) => {
+    if (!value || value === '') return null;
+    if (value instanceof Date) {
+      if (isNaN(value.getTime())) return null;
+      return value.toISOString().split('T')[0];
+    }
+    if (typeof value === 'number') {
+      try {
+        const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+        if (isNaN(date.getTime())) return null;
+        return date.toISOString().split('T')[0];
+      } catch (e) {
+        return null;
+      }
+    }
+    let str = String(value).trim();
+    if (!str) return null;
+    if (str.includes(' ')) {
+      str = str.split(' ')[0];
+    }
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        const first = parseInt(parts[0]);
+        const second = parseInt(parts[1]);
+        let year = parseInt(parts[2]);
+        if (year < 100) year += 2000;
+        let date1 = new Date(year, first - 1, second);
+        if (!isNaN(date1.getTime()) && date1.getMonth() === first - 1) {
+          return date1.toISOString().split('T')[0];
+        }
+        let date2 = new Date(year, second - 1, first);
+        if (!isNaN(date2.getTime()) && date2.getMonth() === second - 1) {
+          return date2.toISOString().split('T')[0];
+        }
+      }
+    }
+    if (str.includes('-')) {
+      const parts = str.split('-');
+      if (parts.length === 3) {
+        const year = parseInt(parts[0]);
+        const month = parseInt(parts[1]);
+        const day = parseInt(parts[2]);
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+          const date = new Date(year, month - 1, day);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString().split('T')[0];
+          }
+        }
+      }
+    }
+    const parsedDate = new Date(str);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.toISOString().split('T')[0];
+    }
+    console.warn(`⚠️ Unable to parse date: "${value}"`);
+    return null;
+  };
+
   const handleExcelImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -272,74 +329,135 @@ export default function EquipmentSims() {
         const data = new Uint8Array(event.target.result);
         const workbook = XLSX.read(data, { type: 'array', cellDates: true });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
-
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false, header: 1 });
+        
+        let headerRowIndex = -1;
+        let headers = [];
+        
+        for (let i = 0; i < Math.min(jsonData.length, 10); i++) {
+          const row = jsonData[i];
+          if (!row || row.length === 0) continue;
+          const rowStr = row.join(' ').toLowerCase();
+          if (rowStr.includes('اسم المعدة') || rowStr.includes('اسم المعده') || 
+              rowStr.includes('سيريل') || rowStr.includes('رقم الشريحة')) {
+            headerRowIndex = i;
+            headers = row.map(cell => String(cell || '').trim());
+            break;
+          }
+        }
+        
+        if (headerRowIndex === -1) {
+          throw new Error('لم يتم العثور على صف العناوين في الملف');
+        }
+        
+        const columnMapping = {};
+        headers.forEach((header, idx) => {
+          const headerLower = header.toLowerCase();
+          if (headerLower.includes('اسم المعدة') || headerLower.includes('اسم المعده')) {
+            columnMapping.equipmentName = idx;
+          } else if (headerLower.includes('الموقع')) {
+            columnMapping.location = idx;
+          } else if (headerLower.includes('نوع الجهاز')) {
+            columnMapping.deviceType = idx;
+          } else if (headerLower.includes('نوع الشريحة') || headerLower.includes('نوع الشبكة')) {
+            columnMapping.simType = idx;
+          } else if (headerLower.includes('سيريل الجهاز') || headerLower.includes('سيريال الجهاز')) {
+            columnMapping.deviceSerial = idx;
+          } else if (headerLower.includes('رقم الشريحة')) {
+            columnMapping.simNumber = idx;
+          } else if (headerLower.includes('سيريل الشريحة') || headerLower.includes('سيريال الشريحة')) {
+            columnMapping.simSerial = idx;
+          } else if (headerLower.includes('تجديد الباقة')) {
+            columnMapping.packageRenewalDate = idx;
+          } else if (headerLower.includes('تجديد الاشتراك')) {
+            columnMapping.subscriptionRenewalDate = idx;
+          } else if (headerLower.includes('ملاحظات')) {
+            columnMapping.notes = idx;
+          }
+        });
+        
+        console.log('📋 Column mapping:', columnMapping);
+        
         let successCount = 0;
         let failedCount = 0;
-        let emptyNameCount = 0;
-
-        const parseExcelDate = (value) => {
-          if (!value) return null;
-          if (value instanceof Date) return value.toISOString().split('T')[0];
-          if (typeof value === 'number') {
-            try {
-              const date = new Date(Math.round((value - 25569) * 86400 * 1000));
-              return isNaN(date.getTime()) ? null : date.toISOString().split('T')[0];
-            } catch (e) { return null; }
-          }
-          let str = String(value).trim();
-          if (!str) return null;
-          str = str.replace(/^0(\d{1,2})\//, '$1/');
-          str = str.split(' ')[0].trim();
-          const parsedDate = new Date(str);
-          return !isNaN(parsedDate.getTime()) ? parsedDate.toISOString().split('T')[0] : null;
-        };
-
-        for (const row of jsonData) {
-          const newItem = {
-            equipmentName: String(row['اسم المعدة'] || row['اسم الجهاز'] || row['equipmentName'] || '').trim() || 'غير مسمى',
-            location: String(row['الموقع'] || row['location'] || '').trim(),
-            deviceType: String(row['نوع الجهاز'] || row['deviceType'] || '').trim(),
-            simType: String(row['نوع الشريحة'] || row['simType'] || '').trim(),
-            deviceSerial: String(row['سيريال الجهاز'] || row['deviceSerial'] || '').trim(),
-            simNumber: String(row['رقم الشريحة'] || row['simNumber'] || '').trim(),
-            simSerial: String(row['سيريال الشريحة'] || row['simSerial'] || '').trim(),
-            packageRenewalDate: parseExcelDate(row['تجديد الباقة'] || row['packageRenewalDate']),
-            subscriptionRenewalDate: parseExcelDate(row['تجديد الاشتراك'] || row['subscriptionRenewalDate']),
-            notes: String(row['الملاحظات'] || row['notes'] || row['أكونت'] || '').trim(),
-          };
-
-          if (newItem.equipmentName && newItem.equipmentName !== 'غير مسمى' && newItem.equipmentName.trim() !== '') {
-            try {
-              await axios.post(`${API_URL}/api/equipment-sims`, newItem);
-              successCount++;
-            } catch (err) {
-              console.warn(`فشل رفع السجل: ${newItem.equipmentName}`, err?.response?.data || err.message);
-              failedCount++;
+        const failedItems = [];
+        
+        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row || row.length === 0 || row.every(cell => !cell || String(cell).trim() === '')) continue;
+          
+          try {
+            const newItem = {
+              equipmentName: columnMapping.equipmentName !== undefined ? 
+                String(row[columnMapping.equipmentName] || '').trim() : '',
+              location: columnMapping.location !== undefined ? 
+                String(row[columnMapping.location] || '').trim() : '',
+              deviceType: columnMapping.deviceType !== undefined ? 
+                String(row[columnMapping.deviceType] || '').trim() : '',
+              simType: columnMapping.simType !== undefined ? 
+                String(row[columnMapping.simType] || '').trim() : '',
+              deviceSerial: columnMapping.deviceSerial !== undefined ? 
+                String(row[columnMapping.deviceSerial] || '').trim() : '',
+              simNumber: columnMapping.simNumber !== undefined ? 
+                String(row[columnMapping.simNumber] || '').trim() : '',
+              simSerial: columnMapping.simSerial !== undefined ? 
+                String(row[columnMapping.simSerial] || '').trim() : '',
+              packageRenewalDate: null,
+              subscriptionRenewalDate: null,
+              notes: columnMapping.notes !== undefined ? 
+                String(row[columnMapping.notes] || '').trim() : '',
+            };
+            
+            if (columnMapping.subscriptionRenewalDate !== undefined) {
+              const rawDate = row[columnMapping.subscriptionRenewalDate];
+              const parsedDate = parseExcelDate(rawDate);
+              console.log(`📅 Row ${i+1}: Raw="${rawDate}", Parsed="${parsedDate}"`);
+              newItem.subscriptionRenewalDate = parsedDate;
             }
-          } else {
-            emptyNameCount++;
+            
+            if (columnMapping.packageRenewalDate !== undefined) {
+              newItem.packageRenewalDate = parseExcelDate(row[columnMapping.packageRenewalDate]);
+            }
+            
+            if (!newItem.equipmentName || newItem.equipmentName === '') {
+              failedCount++;
+              failedItems.push({ row: i + 1, error: 'اسم المعدة مطلوب', data: row });
+              continue;
+            }
+            
+            await axios.post(`${API_URL}/api/equipment-sims`, newItem);
+            successCount++;
+            
+          } catch (err) {
+            console.error(`Error saving row ${i + 1}:`, err?.response?.data || err.message);
             failedCount++;
+            failedItems.push({ row: i + 1, error: err?.response?.data?.message || err.message });
           }
         }
-
-        if (successCount > 0) {
-          setSuccess(`تم استيراد ${successCount} سجل بنجاح${failedCount > 0 ? `، وفشل ${failedCount} سجل` : ''}`);
-        } else if (emptyNameCount > 0) {
-          setError('لم يتم استيراد أي سجل. تأكد أن ملف الإكسيل يحتوي على عمود "اسم المعدة" وأن به قيم صحيحة.');
-        } else {
-          setError('حدث خطأ أثناء عملية الاستيراد.');
+        
+        let message = `✅ تم استيراد ${successCount} سجل بنجاح`;
+        if (failedCount > 0) {
+          message += `، ❌ فشل ${failedCount} سجل`;
+          console.error('Failed items:', failedItems);
         }
-
+        
+        if (successCount > 0) {
+          setSuccess(message);
+        } else {
+          setError(`❌ لم يتم استيراد أي سجل. ${failedItems.length > 0 ? 'تفاصيل: ' + failedItems[0]?.error : 'تأكد من تنسيق الملف'}`);
+        }
+        
         await fetchAllEquipment();
+        
       } catch (err) {
-        console.error(err);
-        setError('حدث خطأ أثناء قراءة ملف الإكسيل');
+        console.error('Import error:', err);
+        setError(`❌ حدث خطأ: ${err.message}`);
       } finally {
         setImportLoading(false);
         e.target.value = '';
       }
     };
+    
     reader.readAsArrayBuffer(file);
   };
 
@@ -1190,7 +1308,7 @@ export default function EquipmentSims() {
                           <button className="edit-btn" onClick={() => openModal(item)} title="تعديل">✏️</button>
                           <button className="delete-btn" onClick={() => setDeleteConfirm(item)} title="حذف">🗑️</button>
                         </div>
-                       </td>
+                      </td>
                     </tr>
                   ))
                 ) : (
@@ -1209,6 +1327,7 @@ export default function EquipmentSims() {
         </div>
       </div>
 
+      {/* Modal for Add/Edit */}
       {modalOpen && (
         <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setModalOpen(false); }}>
           <div className="modal">
@@ -1220,65 +1339,116 @@ export default function EquipmentSims() {
                 <div className="form-grid">
                   <div className="form-full">
                     <label className="form-label">اسم المعدة *</label>
-                    <input className="form-input" type="text" required placeholder="مثال: خلاطة خرسانة - موديل 2024"
-                      value={formData.equipmentName} onChange={(e) => setFormData({ ...formData, equipmentName: e.target.value })} />
+                    <input 
+                      className="form-input" 
+                      type="text" 
+                      required 
+                      placeholder="مثال: خلاطة خرسانة - موديل 2024"
+                      value={formData.equipmentName} 
+                      onChange={(e) => setFormData({ ...formData, equipmentName: e.target.value })} 
+                    />
                   </div>
                   <div>
                     <label className="form-label">الموقع</label>
-                    <input className="form-input" type="text" placeholder="مثال: مصنع القاهرة - خط الإنتاج 1"
-                      value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
+                    <input 
+                      className="form-input" 
+                      type="text" 
+                      placeholder="مثال: مصنع القاهرة - خط الإنتاج 1"
+                      value={formData.location} 
+                      onChange={(e) => setFormData({ ...formData, location: e.target.value })} 
+                    />
                   </div>
                   <div>
                     <label className="form-label">نوع الجهاز</label>
-                    <input className="form-input" type="text" placeholder="مثال: Huawei, ZTE, TP-Link"
-                      value={formData.deviceType} onChange={(e) => setFormData({ ...formData, deviceType: e.target.value })} />
+                    <input 
+                      className="form-input" 
+                      type="text" 
+                      placeholder="مثال: Huawei, ZTE, TP-Link"
+                      value={formData.deviceType} 
+                      onChange={(e) => setFormData({ ...formData, deviceType: e.target.value })} 
+                    />
                   </div>
                   <div>
                     <label className="form-label">نوع الشريحة</label>
-                    <input className="form-input" type="text" placeholder="مثال: 4G, 5G, IoT"
-                      value={formData.simType} onChange={(e) => setFormData({ ...formData, simType: e.target.value })} />
+                    <input 
+                      className="form-input" 
+                      type="text" 
+                      placeholder="مثال: 4G, 5G, IoT"
+                      value={formData.simType} 
+                      onChange={(e) => setFormData({ ...formData, simType: e.target.value })} 
+                    />
                   </div>
                   <div>
                     <label className="form-label">رقم الشريحة</label>
-                    <input className="form-input" type="text" placeholder="مثال: 010XXXXXXXX"
-                      value={formData.simNumber} onChange={(e) => setFormData({ ...formData, simNumber: e.target.value })} />
+                    <input 
+                      className="form-input" 
+                      type="text" 
+                      placeholder="مثال: 010XXXXXXXX"
+                      value={formData.simNumber} 
+                      onChange={(e) => setFormData({ ...formData, simNumber: e.target.value })} 
+                    />
                   </div>
                   <div>
                     <label className="form-label">سيريال الجهاز</label>
-                    <input className="form-input" type="text" placeholder="مثال: SN123456789"
-                      value={formData.deviceSerial} onChange={(e) => setFormData({ ...formData, deviceSerial: e.target.value })} />
+                    <input 
+                      className="form-input" 
+                      type="text" 
+                      placeholder="مثال: SN123456789"
+                      value={formData.deviceSerial} 
+                      onChange={(e) => setFormData({ ...formData, deviceSerial: e.target.value })} 
+                    />
                   </div>
                   <div>
                     <label className="form-label">سيريال الشريحة</label>
-                    <input className="form-input" type="text" placeholder="مثال: 8920XXXXXXXXXX"
-                      value={formData.simSerial} onChange={(e) => setFormData({ ...formData, simSerial: e.target.value })} />
+                    <input 
+                      className="form-input" 
+                      type="text" 
+                      placeholder="مثال: 8920XXXXXXXXXX"
+                      value={formData.simSerial} 
+                      onChange={(e) => setFormData({ ...formData, simSerial: e.target.value })} 
+                    />
                   </div>
                   <div>
                     <label className="form-label">تجديد الباقة</label>
-                    <input className="form-input" type="date" value={formData.packageRenewalDate}
-                      onChange={(e) => setFormData({ ...formData, packageRenewalDate: e.target.value })} />
+                    <input 
+                      className="form-input" 
+                      type="date" 
+                      value={formData.packageRenewalDate}
+                      onChange={(e) => setFormData({ ...formData, packageRenewalDate: e.target.value })} 
+                    />
                   </div>
                   <div>
                     <label className="form-label">تجديد الاشتراك</label>
-                    <input className="form-input" type="date" value={formData.subscriptionRenewalDate}
-                      onChange={(e) => setFormData({ ...formData, subscriptionRenewalDate: e.target.value })} />
+                    <input 
+                      className="form-input" 
+                      type="date" 
+                      value={formData.subscriptionRenewalDate}
+                      onChange={(e) => setFormData({ ...formData, subscriptionRenewalDate: e.target.value })} 
+                    />
                   </div>
                   <div className="form-full">
                     <label className="form-label">الملاحظات</label>
-                    <textarea className="form-textarea" placeholder="أي ملاحظات إضافية..."
-                      value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
+                    <textarea 
+                      className="form-textarea" 
+                      placeholder="أي ملاحظات إضافية..."
+                      value={formData.notes} 
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })} 
+                    />
                   </div>
                 </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>إلغاء</button>
-                <button type="submit" className="btn-primary">{editingItem ? '💾 حفظ التعديلات' : '➕ إضافة الشريحة'}</button>
+                <button type="submit" className="btn-primary">
+                  {editingItem ? '💾 حفظ التعديلات' : '➕ إضافة الشريحة'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* Delete All Confirmation */}
       {deleteAllConfirm && (
         <div className="delete-overlay" onClick={(e) => { if (e.target === e.currentTarget) setDeleteAllConfirm(false); }}>
           <div className="delete-modal">
@@ -1296,6 +1466,7 @@ export default function EquipmentSims() {
         </div>
       )}
 
+      {/* Single Delete Confirmation */}
       {deleteConfirm && (
         <div className="delete-overlay" onClick={(e) => { if (e.target === e.currentTarget) setDeleteConfirm(null); }}>
           <div className="delete-modal">
