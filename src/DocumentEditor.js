@@ -981,42 +981,64 @@ export default function DocumentEditor() {
     padding: 0.5cm;
   }
   
+  /* ─── هيدر الطباعة ─── */
   .print-hdr {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     border-bottom: 3px solid #10b981;
     padding-bottom: 10px;
     margin-bottom: 20px;
   }
   
+  .print-hdr-text-block {
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+  }
+  
   .print-hdr-brand {
     color: #10b981;
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 900;
+    margin: 0;
+    padding: 0;
+    line-height: 1.1;
   }
   
   .print-hdr-sub {
     color: #0f766e;
-    font-weight: 600;
-    font-size: 10px;
-    margin-top: 2px;
+    font-weight: 700;
+    font-size: 12px;
+    margin: 0;
+    padding: 0;
+    line-height: 1.2;
   }
   
+  /* اللوجو في الشمال (يسار في RTL يعني left في الـ flex) */
   .print-hdr-logo {
-    width: 40px;
-    height: 40px;
-    background: linear-gradient(135deg, #10b981, #0f766e);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    color: white;
-    font-weight: 900;
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
     flex-shrink: 0;
   }
   
+  /* إذا لم يوجد لوجو نعرض placeholder */
+  .print-hdr-logo-fallback {
+    width: 64px;
+    height: 64px;
+    background: linear-gradient(135deg, #10b981, #0f766e);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: white;
+    font-weight: 900;
+    flex-shrink: 0;
+    font-family: 'Cairo', sans-serif;
+  }
+
   .doc-title {
     text-align: center;
     color: #065f46;
@@ -1123,22 +1145,60 @@ export default function DocumentEditor() {
     page-break-inside: avoid;
   }
   
+  /* ─── فوتر كل صفحة ─── */
   .print-footer {
-    margin-top: 30px;
-    padding-top: 10px;
+    margin-top: 40px;
+    padding-top: 14px;
     border-top: 2px solid #d1fae5;
+  }
+
+  .print-footer-top {
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-size: 10px;
     color: #555;
+    margin-bottom: 20px;
   }
-  
+
   .print-footer-brand {
     color: #10b981;
     font-weight: 800;
   }
-  
+
+  /* منطقة التوقيع */
+  .print-signature-area {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    margin-top: 10px;
+    font-family: 'Cairo', sans-serif;
+    direction: rtl;
+  }
+
+  .print-signature-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #111;
+    margin-bottom: 2px;
+  }
+
+  .print-signature-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 2px;
+  }
+
+  .print-signature-line {
+    font-size: 13px;
+    color: #374151;
+    letter-spacing: 2px;
+    margin-top: 2px;
+    font-family: monospace;
+  }
+
   /* تحسين عرض القوائم */
   ul, ol {
     margin: 10px 20px;
@@ -1177,25 +1237,53 @@ export default function DocumentEditor() {
     tr {
       page-break-inside: avoid;
     }
+    /* تكرار الفوتر في كل صفحة عند الطباعة */
+    .print-footer {
+      position: running(footer);
+    }
   }
 </style>
 </head>
 <body>
 <div class="print-page">
+
+  <!-- ─── هيدر الطباعة ─── -->
   <div class="print-hdr">
-    <div>
+    <!-- النص: NileMix فوق وتحتها مباشرة إدارة العلاقات العامة -->
+    <div class="print-hdr-text-block">
       <div class="print-hdr-brand">NileMix</div>
-      <div class="print-hdr-sub">شركة النيل للخرسانة الجاهزة — إدارة العلاقات العامة والأمن</div>
+      <div class="print-hdr-sub">إدارة العلاقات العامة والأمن</div>
     </div>
-    <div class="print-hdr-logo">N</div>
+    <!-- اللوجو في الشمال (left في RTL) -->
+    <img
+      src="${process.env.REACT_APP_LOGO_URL || '/logo.png'}"
+      class="print-hdr-logo"
+      alt="NileMix Logo"
+      onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='flex';"
+    />
+    <div id="logo-fallback" class="print-hdr-logo-fallback" style="display:none;">N</div>
   </div>
+
   ${title ? `<div class="doc-title">${title}</div>` : ''}
+
   <div class="content-body">${edHTML}</div>
+
+  <!-- ─── فوتر كل صفحة ─── -->
   <div class="print-footer">
-    <span>${dateStr}</span>
-    <span class="print-footer-brand">NileMix Document Editor ✦</span>
+    <div class="print-footer-top">
+      <span>${dateStr}</span>
+      <span class="print-footer-brand">NileMix Document Editor ✦</span>
+    </div>
+    <!-- منطقة التوقيع -->
+    <div class="print-signature-area">
+      <div class="print-signature-label">التوقيع :</div>
+      <div class="print-signature-title">مدير العلاقات العامة والأمن :</div>
+      <div class="print-signature-line">---------------------</div>
+    </div>
   </div>
+
 </div>
+
 <div class="no-print" style="position:fixed;bottom:20px;right:20px;z-index:9999;">
   <button onclick="window.print()" style="background:linear-gradient(135deg,#10b981,#059669);color:white;border:none;padding:12px 24px;border-radius:10px;cursor:pointer;font-size:14px;font-family:Cairo,sans-serif;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.2);">
     🖨️ طباعة
