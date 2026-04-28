@@ -1,6 +1,7 @@
 // src/DocumentEditor.js
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+
 // ─── حوار إدراج جدول ───────────────────────────────────────────────────────
 function TableDialog({ onInsert, onClose }) {
   const [rows, setRows] = useState(3);
@@ -39,7 +40,8 @@ function TableDialog({ onInsert, onClose }) {
     </div>
   );
 }
-// ─── حوار تقسيم الخلية (جديد) ──────────────────────────────────────────────
+
+// ─── حوار تقسيم الخلية ──────────────────────────────────────────────
 function SplitCellDialog({ onSplit, onClose }) {
   const [cols, setCols] = useState(2);
   const [rows, setRows] = useState(1);
@@ -111,6 +113,7 @@ function SplitCellDialog({ onSplit, onClose }) {
     </div>
   );
 }
+
 // ─── قائمة السياق ─────────────────────────────────────────────────────────
 function ContextMenu({ pos, onAction, onClose }) {
   useEffect(() => {
@@ -142,6 +145,7 @@ function ContextMenu({ pos, onAction, onClose }) {
     </ul>
   );
 }
+
 // ─── حوار حجم الخط المخصص ────────────────────────────────────────────────
 function FontSizeDialog({ onApply, onClose }) {
   const [size, setSize] = useState(16);
@@ -178,6 +182,7 @@ function FontSizeDialog({ onApply, onClose }) {
     </div>
   );
 }
+
 // ─── حوار تغيير حجم الجدول ───────────────────────────────────────────────
 function TableResizeDialog({ table, onClose }) {
   const initW = table ? (parseInt(table.style.width) || 100) : 100;
@@ -257,6 +262,7 @@ function TableResizeDialog({ table, onClose }) {
     </div>
   );
 }
+
 // ─── حوار قائمة المستندات المحفوظة ──────────────────────────────────────
 function SavedDocsDialog({ onLoad, onClose }) {
   const [docs, setDocs] = useState([]);
@@ -310,6 +316,68 @@ function SavedDocsDialog({ onLoad, onClose }) {
     </div>
   );
 }
+
+// ─── حوار خيارات الطباعة ──────────────────────────────────────────────────
+function PrintOptionsDialog({ onClose, onPrint }) {
+  const [orientation, setOrientation] = useState('portrait');
+  const [pageSize, setPageSize] = useState('A4');
+  
+  return (
+    <div className="tbl-overlay" onClick={onClose}>
+      <div className="tbl-dialog" onClick={e => e.stopPropagation()} style={{ minWidth: 320 }}>
+        <h3 className="tbl-title">🖨️ خيارات الطباعة</h3>
+        <div style={{ marginBottom: 20 }}>
+          <div className="tbl-field" style={{ marginBottom: 15 }}>
+            <label style={{ fontSize: 13, marginBottom: 8 }}>اتجاه الورقة</label>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button 
+                onClick={() => setOrientation('portrait')}
+                style={{
+                  padding: '10px 20px',
+                  border: orientation === 'portrait' ? '2px solid #10b981' : '1px solid #d1fae5',
+                  borderRadius: 8,
+                  background: orientation === 'portrait' ? '#f0fdf4' : 'white',
+                  cursor: 'pointer',
+                  fontFamily: 'Cairo,sans-serif'
+                }}>
+                📄 طولي (Portrait)
+              </button>
+              <button 
+                onClick={() => setOrientation('landscape')}
+                style={{
+                  padding: '10px 20px',
+                  border: orientation === 'landscape' ? '2px solid #10b981' : '1px solid #d1fae5',
+                  borderRadius: 8,
+                  background: orientation === 'landscape' ? '#f0fdf4' : 'white',
+                  cursor: 'pointer',
+                  fontFamily: 'Cairo,sans-serif'
+                }}>
+                📄 عرضي (Landscape)
+              </button>
+            </div>
+          </div>
+          <div className="tbl-field">
+            <label style={{ fontSize: 13, marginBottom: 8 }}>حجم الورقة</label>
+            <select 
+              value={pageSize} 
+              onChange={e => setPageSize(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #d1fae5', fontFamily: 'Cairo,sans-serif' }}>
+              <option value="A4">A4</option>
+              <option value="A3">A3</option>
+              <option value="Letter">Letter</option>
+              <option value="Legal">Legal</option>
+            </select>
+          </div>
+        </div>
+        <div className="tbl-actions">
+          <button className="tbl-insert" onClick={() => onPrint(orientation, pageSize)}>طباعة</button>
+          <button className="tbl-cancel" onClick={onClose}>إلغاء</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // المكوّن الرئيسي
 // ═══════════════════════════════════════════════════════════════════════════
@@ -328,6 +396,7 @@ export default function DocumentEditor() {
   const [showSavedDocs, setShowSavedDocs] = useState(false);
   const [showSplitDlg, setShowSplitDlg] = useState(false);
   const [splitTarget, setSplitTarget] = useState(null);
+  const [showPrintOptions, setShowPrintOptions] = useState(false);
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const autoSaveTimer = useRef(null);
@@ -337,11 +406,13 @@ export default function DocumentEditor() {
   const startX = useRef(0);
   const startWidth = useRef(0);
   const navigate = useNavigate();
+
   const updateCounts = useCallback(() => {
     const txt = editorRef.current?.innerText || '';
     setCharCount(txt.length);
     setWordCount(txt.trim() ? txt.trim().split(/\s+/).filter(Boolean).length : 0);
   }, []);
+
   const getCleanHTMLForSave = () => {
     const ed = editorRef.current; if (!ed) return '';
     const clone = ed.cloneNode(true);
@@ -351,6 +422,7 @@ export default function DocumentEditor() {
     clone.querySelectorAll('[tabindex]').forEach(el => el.removeAttribute('tabindex'));
     return clone.innerHTML;
   };
+
   const saveDocument = useCallback(async (silent = false) => {
     const content = getCleanHTMLForSave();
     const docTitle = title.trim() || 'بدون عنوان';
@@ -374,12 +446,14 @@ export default function DocumentEditor() {
       setTimeout(() => setSaveStatus(''), 4000);
     }
   }, [title, currentDocId]);
+
   const newDocument = () => {
     if (editorRef.current?.innerText.trim() && !window.confirm('هل تريد بدء مستند جديد؟ سيتم فقدان التغييرات غير المحفوظة.')) return;
     setTitle(''); setCurrentDocId(null);
     if (editorRef.current) editorRef.current.innerHTML = '';
     updateCounts(); setSaveStatus('');
   };
+
   const loadDocument = (doc) => {
     setTitle(doc.title || ''); setCurrentDocId(doc._id);
     if (editorRef.current) {
@@ -393,6 +467,7 @@ export default function DocumentEditor() {
     updateCounts(); setShowSavedDocs(false); setSaveStatus('saved');
     setTimeout(() => setSaveStatus(''), 2000);
   };
+
   useEffect(() => {
     autoSaveTimer.current = setInterval(() => {
       const c = editorRef.current?.innerText?.trim();
@@ -400,13 +475,16 @@ export default function DocumentEditor() {
     }, 30000);
     return () => clearInterval(autoSaveTimer.current);
   }, [saveDocument]);
+
   useEffect(() => {
     const hk = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveDocument(false); } };
     document.addEventListener('keydown', hk);
     return () => document.removeEventListener('keydown', hk);
   }, [saveDocument]);
+
   const placeCursorEnd = (el) => { try { const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (e) { } };
   const placeCursorStart = (el) => { try { const r = document.createRange(); r.selectNodeContents(el); r.collapse(true); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (e) { } };
+
   const makeEditorCell = useCallback((tag, colW = 100) => {
     const el = document.createElement(tag);
     el.contentEditable = true; el.spellcheck = false; el.innerHTML = '<br>'; el.tabIndex = 0;
@@ -440,9 +518,10 @@ export default function DocumentEditor() {
     }
     return el;
   }, []);
+
   const makeCell = makeEditorCell;
 
-  // ─── دوال التراجع والإعادة (لجعل الجداول ترجع بشكل كامل) ───────────────
+  // ─── دوال التراجع والإعادة ───────────────
   const saveUndoState = useCallback(() => {
     const ed = editorRef.current;
     if (!ed) return;
@@ -535,10 +614,12 @@ export default function DocumentEditor() {
     ed.addEventListener('keydown', onKeyDown);
     return () => { ed.removeEventListener('contextmenu', onCtx); ed.removeEventListener('input', updateCounts); ed.removeEventListener('keydown', onKeyDown); };
   }, [updateCounts, makeEditorCell]);
+
   const saveSelection = () => { const s = window.getSelection(); if (s && s.rangeCount > 0) savedRange.current = s.getRangeAt(0).cloneRange(); };
   const restoreSelection = () => { const s = window.getSelection(); if (savedRange.current && s) { s.removeAllRanges(); s.addRange(savedRange.current); } };
   const openTableDialog = () => { saveSelection(); setShowTblDlg(true); };
-  // دالة تقسيم الخلية (تم تعديلها لتقسيم الخلية كاملة في هيكل الجدول بدون جدول داخلي)
+
+  // دالة تقسيم الخلية
   const splitCell = (subCols, subRows) => {
     if (!splitTarget) return;
     const cell = splitTarget;
@@ -552,9 +633,7 @@ export default function DocumentEditor() {
     const originalContent = cell.innerHTML === '<br>' ? '' : cell.innerHTML;
     const colW = cell.offsetWidth || 100;
     const newColW = Math.max(30, Math.floor(colW / subCols));
-    // حفظ حالة التراجع
     saveUndoState();
-    // إضافة أعمدة جديدة (subCols - 1) بعد العمود الحالي
     for (let addedC = 0; addedC < subCols - 1; addedC++) {
       allRows.forEach((r) => {
         const cells = Array.from(r.children);
@@ -567,9 +646,7 @@ export default function DocumentEditor() {
         refCell.after(newCell);
       });
     }
-    // تحديث قائمة الصفوف بعد إضافة الأعمدة
     const updatedRows = Array.from(table.querySelectorAll('tr'));
-    // إضافة صفوف جديدة (subRows - 1) بعد الصف الحالي
     for (let addedR = 0; addedR < subRows - 1; addedR++) {
       const newRow = document.createElement('tr');
       const numCols = updatedRows[0].children.length;
@@ -585,13 +662,10 @@ export default function DocumentEditor() {
         table.querySelector('tbody')?.appendChild(newRow);
       }
     }
-    // تحديث قائمة الصفوف النهائية
     const finalRows = Array.from(table.querySelectorAll('tr'));
-    // الخلية الأصلية تصبح الخلية العلوية اليسرى في التقسيم
     cell.innerHTML = originalContent || '<br>';
     cell.style.width = `${newColW}px`;
     cell.style.minWidth = `${newColW}px`;
-    // ملء باقي الخلايا في المنطقة المقسمة
     for (let sr = 0; sr < subRows; sr++) {
       const targetRow = finalRows[rowIdx + sr];
       if (!targetRow) continue;
@@ -606,15 +680,14 @@ export default function DocumentEditor() {
         }
       }
     }
-    // إعادة إضافة المقابض والتحكم في الجدول
     addResizeHandles(table);
     const wr = table.closest('.movable-table-wrapper');
     if (wr) addTableCornerHandle(wr, table);
     updateCounts();
-    // التركيز على الخلية الأولى بعد التقسيم
     const firstSub = cell;
     if (firstSub) setTimeout(() => { firstSub.focus(); placeCursorStart(firstSub); }, 50);
   };
+
   const addResizeHandles = (table) => {
     table.querySelectorAll('th').forEach((th, index) => {
       let h = th.querySelector('.resize-handle'); if (h) h.remove();
@@ -669,6 +742,7 @@ export default function DocumentEditor() {
       });
     });
   };
+
   const addTableCornerHandle = (wrapper, table) => {
     let corner = wrapper.querySelector('.tbl-corner-handle'); if (corner) corner.remove();
     corner = document.createElement('div'); corner.className = 'tbl-corner-handle'; corner.title = 'اسحب لتغيير حجم الجدول';
@@ -682,10 +756,10 @@ export default function DocumentEditor() {
       document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
     });
   };
+
   const insertTable = (rows, cols) => {
     setShowTblDlg(false);
     const ed = editorRef.current; if (!ed) return;
-    // حفظ حالة التراجع قبل إدراج الجدول
     saveUndoState();
     const colW = Math.max(60, Math.floor(640 / cols));
     const table = document.createElement('table');
@@ -726,6 +800,7 @@ export default function DocumentEditor() {
     if (fc) setTimeout(() => { fc.focus(); placeCursorStart(fc); }, 60);
     updateCounts();
   };
+
   const handleTableAction = (act) => {
     if (!ctxMenu?.cell) return;
     const cell = ctxMenu.cell; const row = cell.parentElement;
@@ -741,7 +816,6 @@ export default function DocumentEditor() {
       return;
     }
    
-    // حفظ حالة التراجع قبل أي تعديل على الجدول
     saveUndoState();
    
     switch (act) {
@@ -778,6 +852,7 @@ export default function DocumentEditor() {
     if (table.isConnected) { addResizeHandles(table); const wr = table.closest('.movable-table-wrapper'); if (wr) addTableCornerHandle(wr, table); }
     updateCounts();
   };
+
   const execCmd = (cmd, val = null) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); };
   const applyFont = font => { editorRef.current?.focus(); document.execCommand('fontName', false, font); };
   const applySize = size => {
@@ -786,18 +861,21 @@ export default function DocumentEditor() {
     const range = sel.getRangeAt(0); const span = document.createElement('span'); span.style.fontSize = size;
     try { range.surroundContents(span); } catch { const frag = range.extractContents(); span.appendChild(frag); range.insertNode(span); }
   };
+
   const changePageWidth = delta => {
     const nw = Math.max(600, Math.min(1400, pageWidth + delta)); setPageWidth(nw);
     const wrap = document.querySelector('.de-wrap'); const ed = editorRef.current;
     if (wrap) wrap.style.maxWidth = `${nw}px`;
     if (ed) ed.style.padding = `52px ${Math.max(40, nw / 15)}px`;
   };
+
   const resetPageWidth = () => {
     setPageWidth(960);
     const wrap = document.querySelector('.de-wrap'); const ed = editorRef.current;
     if (wrap) wrap.style.maxWidth = '960px';
     if (ed) ed.style.padding = '52px 64px';
   };
+
   const getCleanHTML = () => {
     const ed = editorRef.current; if (!ed) return '';
     const clone = ed.cloneNode(true);
@@ -859,11 +937,20 @@ export default function DocumentEditor() {
     });
     return clone.innerHTML;
   };
-  const handlePrint = () => {
+
+  // دالة الطباعة المحسنة مع خيارات التحكم
+  const handlePrint = (orientation = 'portrait', pageSize = 'A4') => {
     const edHTML = getCleanHTML();
     const dateStr = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' });
-    const win = window.open('', '_blank', 'width=1200,height=900');
+    
+    // تحديد اتجاه الورقة
+    const orientationStyle = orientation === 'landscape' 
+      ? '@page { size: ' + pageSize + ' landscape; margin: 0.8cm; }' 
+      : '@page { size: ' + pageSize + ' portrait; margin: 0.8cm; }';
+    
+    const win = window.open('', '_blank', 'width=1200,height=900,toolbar=yes,menubar=yes');
     if (!win) { alert('يرجى السماح بالنوافذ المنبثقة'); return; }
+    
     win.document.write(`<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -871,114 +958,226 @@ export default function DocumentEditor() {
 <title>${title || 'مستند'}</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;900&display=swap" rel="stylesheet">
 <style>
-@page {
-  size: A4 landscape;
-  margin: 0.5cm;
-}
-*, *::before, *::after { box-sizing: border-box; }
-html, body {
-  margin: 0;
-  padding: 0;
-  font-family: 'Cairo', sans-serif;
-  line-height: 1.8;
-  color: #111;
-  background: #fff;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-.print-page {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  max-width: none;
-}
-.print-hdr {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 4px solid #10b981;
-  padding-bottom: 10px;
-  margin-bottom: 14px;
-}
-.print-hdr-brand { color:#10b981; font-size:22px; font-weight:900; }
-.print-hdr-sub { color:#0f766e; font-weight:600; font-size:10px; margin-top:1px; }
-.print-hdr-logo {
-  width:40px; height:40px;
-  background:linear-gradient(135deg,#10b981,#0f766e);
-  border-radius:8px;
-  display:flex; align-items:center; justify-content:center;
-  font-size:18px; color:white; font-weight:900; flex-shrink:0;
-  -webkit-print-color-adjust:exact; print-color-adjust:exact;
-}
-.doc-title {
-  text-align:center; color:#065f46; font-size:16px; font-weight:900;
-  margin:12px 0 14px; padding-bottom:6px; border-bottom:2px dashed #a7f3d0;
-}
-.content-body p { margin:8px 0; word-break:break-word; }
-.content-body h1 { font-size:16px; font-weight:900; color:#065f46; margin:12px 0 6px; }
-.content-body h2 { font-size:14px; font-weight:800; color:#0f766e; margin:10px 0 5px; }
-.content-body h3 { font-size:12px; font-weight:700; color:#047857; margin:8px 0 4px; }
-table {
-  border-collapse: collapse !important;
-  direction: rtl !important;
-  table-layout: fixed !important;
-  -webkit-print-color-adjust: exact !important;
-  print-color-adjust: exact !important;
-  page-break-inside: auto;
-  margin: 8px 0 !important;
-  width: auto !important;
-}
-th, td {
-  border: 1.6px solid #000 !important;
-  text-align: center !important;
-  vertical-align: middle !important;
-  word-break: break-word !important;
-  overflow-wrap: break-word !important;
-  direction: rtl !important;
-  position: static !important;
-  font-family: 'Cairo', sans-serif !important;
-  -webkit-print-color-adjust: exact !important;
-  print-color-adjust: exact !important;
-}
-th { font-weight:700 !important; background:#f0f0f0 !important; color:#000 !important; }
-thead { display: table-header-group !important; }
-tbody { display: table-row-group !important; }
-tr { page-break-inside: avoid !important; page-break-after: auto; }
-td { page-break-inside: avoid !important; }
-/* للجداول الداخلية من التقسيم */
-td table {
-  width: 100% !important;
-  height: 100% !important;
-  border: none !important;
-  margin: 0 !important;
-}
-td table td {
-  border: 1px dashed #059669 !important;
-  font-size: 12px !important;
-  padding: 2px 4px !important;
-}
-.print-tbl-wrap {
-  display: block;
-  margin: 8px 0;
-  transform: none !important;
-  overflow: visible !important;
-  page-break-inside: avoid;
-  overflow-x: visible;
-}
-.print-footer {
-  margin-top: 20px; padding-top: 8px;
-  border-top: 2px solid #d1fae5;
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 9px; color: #555;
-  -webkit-print-color-adjust: exact; print-color-adjust: exact;
-}
-.print-footer-brand { color:#10b981; font-weight:800; }
-.no-print { display:block; }
-@media print {
-  .no-print { display:none !important; }
-  body { margin: 0; padding: 0; }
-  html { margin: 0; padding: 0; }
-}
+  ${orientationStyle}
+  
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Cairo', sans-serif;
+    line-height: 1.7;
+    color: #111;
+    background: #fff;
+  }
+  
+  .print-page {
+    width: 100%;
+    margin: 0 auto;
+    padding: 0.5cm;
+  }
+  
+  .print-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 3px solid #10b981;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+  }
+  
+  .print-hdr-brand {
+    color: #10b981;
+    font-size: 20px;
+    font-weight: 900;
+  }
+  
+  .print-hdr-sub {
+    color: #0f766e;
+    font-weight: 600;
+    font-size: 10px;
+    margin-top: 2px;
+  }
+  
+  .print-hdr-logo {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #10b981, #0f766e);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: white;
+    font-weight: 900;
+    flex-shrink: 0;
+  }
+  
+  .doc-title {
+    text-align: center;
+    color: #065f46;
+    font-size: 18px;
+    font-weight: 900;
+    margin: 15px 0 20px;
+    padding-bottom: 8px;
+    border-bottom: 2px dashed #a7f3d0;
+  }
+  
+  .content-body {
+    margin: 20px 0;
+  }
+  
+  .content-body p {
+    margin: 10px 0;
+    word-break: break-word;
+    line-height: 1.7;
+  }
+  
+  .content-body h1 {
+    font-size: 18px;
+    font-weight: 900;
+    color: #065f46;
+    margin: 15px 0 10px;
+  }
+  
+  .content-body h2 {
+    font-size: 16px;
+    font-weight: 800;
+    color: #0f766e;
+    margin: 12px 0 8px;
+  }
+  
+  .content-body h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #047857;
+    margin: 10px 0 6px;
+  }
+  
+  /* تحسين عرض الجداول في الطباعة */
+  table {
+    border-collapse: collapse !important;
+    direction: rtl !important;
+    table-layout: auto !important;
+    width: 100% !important;
+    margin: 15px 0 !important;
+    page-break-inside: avoid !important;
+  }
+  
+  th, td {
+    border: 1.5px solid #000 !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    direction: rtl !important;
+    padding: 8px 12px !important;
+    font-family: 'Cairo', sans-serif !important;
+  }
+  
+  th {
+    font-weight: 700 !important;
+    background: #f0f0f0 !important;
+    color: #000 !important;
+  }
+  
+  thead {
+    display: table-header-group !important;
+  }
+  
+  tbody {
+    display: table-row-group !important;
+  }
+  
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+  
+  td {
+    page-break-inside: avoid !important;
+  }
+  
+  /* للجداول المتداخلة */
+  td table {
+    width: 100% !important;
+    height: 100% !important;
+    border: none !important;
+    margin: 0 !important;
+  }
+  
+  td table td {
+    border: 1px dashed #059669 !important;
+    font-size: 12px !important;
+    padding: 4px 6px !important;
+  }
+  
+  .print-tbl-wrap {
+    display: block;
+    margin: 15px 0;
+    overflow-x: auto;
+    page-break-inside: avoid;
+  }
+  
+  .print-footer {
+    margin-top: 30px;
+    padding-top: 10px;
+    border-top: 2px solid #d1fae5;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    color: #555;
+  }
+  
+  .print-footer-brand {
+    color: #10b981;
+    font-weight: 800;
+  }
+  
+  /* تحسين عرض القوائم */
+  ul, ol {
+    margin: 10px 20px;
+    padding-right: 20px;
+  }
+  
+  li {
+    margin: 5px 0;
+  }
+  
+  /* منع انقطاع الصفحات داخل العناصر */
+  h1, h2, h3, h4, h5, h6, p, li, blockquote {
+    page-break-inside: avoid;
+  }
+  
+  .no-print {
+    display: block;
+  }
+  
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+    }
+    html {
+      margin: 0;
+      padding: 0;
+    }
+    /* تجنب انقطاع الجداول */
+    table {
+      page-break-inside: avoid;
+    }
+    tr {
+      page-break-inside: avoid;
+    }
+  }
 </style>
 </head>
 <body>
@@ -997,12 +1196,11 @@ td table td {
     <span class="print-footer-brand">NileMix Document Editor ✦</span>
   </div>
 </div>
-<div class="no-print" style="position:fixed;bottom:0;left:0;right:0;background:linear-gradient(135deg,#0f172a,#1e293b);padding:12px 32px;display:flex;align-items:center;justify-content:center;gap:16px;box-shadow:0 -4px 20px rgba(0,0,0,.4);z-index:9999;">
-  <span id="info" style="color:#94a3b8;font-family:Cairo,sans-serif;font-size:12px;">ملاحظة: قد تحتاج عدة صفحات للجداول الكبيرة</span>
-  <button onclick="window.print()" style="background:linear-gradient(135deg,#10b981,#059669);color:white;border:none;padding:10px 28px;border-radius:10px;cursor:pointer;font-size:14px;font-family:Cairo,sans-serif;font-weight:700;box-shadow:0 4px 14px rgba(16,185,129,.4);">
-    🖨️ طباعة / حفظ PDF
+<div class="no-print" style="position:fixed;bottom:20px;right:20px;z-index:9999;">
+  <button onclick="window.print()" style="background:linear-gradient(135deg,#10b981,#059669);color:white;border:none;padding:12px 24px;border-radius:10px;cursor:pointer;font-size:14px;font-family:Cairo,sans-serif;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.2);">
+    🖨️ طباعة
   </button>
-  <button onclick="window.close()" style="background:#374151;color:white;border:none;padding:10px 20px;border-radius:10px;cursor:pointer;font-size:13px;font-family:Cairo,sans-serif;font-weight:700;">
+  <button onclick="window.close()" style="background:#374151;color:white;border:none;padding:12px 20px;border-radius:10px;cursor:pointer;font-size:13px;font-family:Cairo,sans-serif;font-weight:700;margin-right:10px;">
     إغلاق
   </button>
 </div>
@@ -1010,12 +1208,14 @@ td table td {
 </html>`);
     win.document.close();
   };
+
   const renderSaveStatus = () => {
     if (!saveStatus) return null;
     const cfg = { saving: { bg: '#fef9c3', color: '#854d0e', icon: '⏳', text: 'جاري الحفظ...' }, saved: { bg: '#d1fae5', color: '#065f46', icon: '✓', text: 'تم الحفظ' }, error: { bg: '#fee2e2', color: '#991b1b', icon: '✕', text: 'خطأ في الحفظ' } };
     const c = cfg[saveStatus]; if (!c) return null;
     return <span style={{ background: c.bg, color: c.color, padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{c.icon} {c.text}</span>;
   };
+
   return (
     <>
       <style>{`
@@ -1147,7 +1347,7 @@ th[draggable="true"]:active{cursor:grabbing}
             <button className="de-btn btn-dark" onClick={() => setZoomLevel(v => Math.min(300, v + 10))} title="تكبير">🔍+</button>
             <button className="de-btn btn-dark" onClick={() => setZoomLevel(100)} title="100%">100%</button>
             <div className="hdr-sep" />
-            <button className="de-btn btn-green" onClick={handlePrint}>🖨️ طباعة / PDF</button>
+            <button className="de-btn btn-green" onClick={() => setShowPrintOptions(true)}>🖨️ طباعة / PDF</button>
             <button className="de-btn btn-dark" onClick={() => navigate('/dashboard')}>← رجوع</button>
           </div>
         </div>
@@ -1218,6 +1418,7 @@ th[draggable="true"]:active{cursor:grabbing}
         {tblResizeTarget && <TableResizeDialog table={tblResizeTarget} onClose={() => setTblResizeTarget(null)} />}
         {showSavedDocs && <SavedDocsDialog onLoad={loadDocument} onClose={() => setShowSavedDocs(false)} />}
         {showSplitDlg && <SplitCellDialog onSplit={(cols, rows) => splitCell(cols, rows)} onClose={() => setShowSplitDlg(false)} />}
+        {showPrintOptions && <PrintOptionsDialog onClose={() => setShowPrintOptions(false)} onPrint={handlePrint} />}
         <div className="de-status">
           <span>
             كلمات: <strong style={{ color: '#94a3b8' }}>{wordCount}</strong>
